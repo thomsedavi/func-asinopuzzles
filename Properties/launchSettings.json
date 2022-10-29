@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "func_asinopuzzles": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7152",
+      "launchBrowser": false
+    }
+  }
+}
