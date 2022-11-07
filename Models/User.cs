@@ -9,5 +9,6 @@ namespace AsinoPuzzles.Functions.Models
         [JsonProperty(PropertyName = "partitionKey")]
         public string PartitionKey { get; set; }
         public string Name { get; set; }
+        public string Biography { get; set; }
     }
 }

@@ -42,13 +42,15 @@ namespace AsinoPuzzles.Functions
                     var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
                     var update = JsonConvert.DeserializeObject<User>(requestBody);
 
-                    var name = update.Name?.Trim() ?? userResponse.Resource.Name;
+                    var name = update.Name?.Trim() ?? userResponse.Resource.Name ?? "Anonymous";
+                    var biography = update.Biography?.Trim() ?? userResponse.Resource.Biography ?? "Asino Puzzler";
 
                     var user = new User
                     {
                         Id = id.ToString().ToLower(),
                         PartitionKey = id.ToString().ToLower(),
-                        Name = name[..Math.Min(name.Length, 64)]
+                        Name = name[..Math.Min(name.Length, 64)],
+                        Biography = biography[..Math.Min(biography.Length, 64)]
                     };
 
                     await container.ReplaceItemAsync(user, user.Id, new PartitionKey(user.PartitionKey));
@@ -72,7 +74,8 @@ namespace AsinoPuzzles.Functions
                         {
                             Id = userId,
                             PartitionKey = userId,
-                            Name = "Anonymous"
+                            Name = "Anonymous",
+                            Biography = "Asino Puzzler"
                         };
 
                         await container.CreateItemAsync(user, new PartitionKey(user.PartitionKey));
