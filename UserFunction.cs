@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using AsinoPuzzles.Functions.Models;
 using AsinoPuzzles.Functions.Utils;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -43,14 +45,36 @@ namespace AsinoPuzzles.Functions
                     var update = JsonConvert.DeserializeObject<User>(requestBody);
 
                     var name = update.Name?.Trim() ?? userResponse.Resource.Name ?? "Anonymous";
-                    var biography = update.Biography?.Trim() ?? userResponse.Resource.Biography ?? "Asino Puzzler";
+                    var biography = update.Biography
+                        ?? userResponse.Resource.Biography
+                        ?? new Document
+                        {
+                            Sections = new List<Section>
+                            {
+                                new Section
+                                {
+                                    Type = "PARAGRAPH",
+                                    Element = new Element
+                                    {
+                                        Text = "Asino Puzzler"
+                                    }
+                                }
+                            }
+                        };
+
+                    var biographyJson = JsonConvert.SerializeObject(biography);
+
+                    if (biographyJson.Length > 4000)
+                    {
+                        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult("BIOGRAPHY_TOO_LONG");
+                    }
 
                     var user = new User
                     {
                         Id = id.ToString().ToLower(),
                         PartitionKey = id.ToString().ToLower(),
                         Name = name[..Math.Min(name.Length, 64)],
-                        Biography = biography[..Math.Min(biography.Length, 64)]
+                        Biography = biography
                     };
 
                     await container.ReplaceItemAsync(user, user.Id, new PartitionKey(user.PartitionKey));
@@ -75,7 +99,20 @@ namespace AsinoPuzzles.Functions
                             Id = userId,
                             PartitionKey = userId,
                             Name = "Anonymous",
-                            Biography = "Asino Puzzler"
+                            Biography = new Document
+                            {
+                                Sections = new List<Section>
+                                {
+                                    new Section
+                                    {
+                                        Type = "PARAGRAPH",
+                                        Element = new Element
+                                        {
+                                            Text = "Asino Puzzler"
+                                        }
+                                    }
+                                }
+                            }
                         };
 
                         await container.CreateItemAsync(user, new PartitionKey(user.PartitionKey));
