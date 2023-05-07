@@ -18,10 +18,10 @@ using User = AsinoPuzzles.Functions.Models.User;
 
 namespace AsinoPuzzles.Functions
 {
-        public static class LexicologersNewFunction {
+    public static class LexicologersNewFunction {
         [FunctionName("LexicologerNew")]
         public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "lexicologers")] HttpRequest req, ILogger log)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "lexicologers")] HttpRequest req, ILogger log)
         {
             try
             {
@@ -98,7 +98,7 @@ namespace AsinoPuzzles.Functions
                     
                         if (detailsJson.Length > 4000 || requiredWordsJson.Length > 4000)
                         {
-                            return new BadRequestObjectResult("BIOGRAPHY_TOO_LONG");
+                            return new BadRequestObjectResult("Too long");
                         }
 
                         var lexicologer = new Lexicologer
@@ -185,7 +185,7 @@ namespace AsinoPuzzles.Functions
                     
                     if (detailsJson.Length > 4000 || requiredWordsJson.Length > 4000)
                     {
-                        return new BadRequestObjectResult("BIOGRAPHY_TOO_LONG");
+                        return new BadRequestObjectResult("Too long");
                     }
 
                     lexicologer.Title = title[..Math.Min(title.Length, 64)];
@@ -261,7 +261,7 @@ namespace AsinoPuzzles.Functions
                                     var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
                                     var lexicologers = lexicologersResponse.Resource.Where(lexicologer => !lexicologer.IsDeleted);
 
-                                    userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerResult(lexicologer, user)).ToList();
+                                    userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerSummary(lexicologer)).ToList();
                                 }
                                 catch (Exception exception)
                                 {
@@ -344,7 +344,7 @@ namespace AsinoPuzzles.Functions
                                     var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
                                     var lexicologers = lexicologersResponse.Resource.Where(lexicologer => !lexicologer.IsDeleted);
 
-                                    userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerResult(lexicologer, user)).ToList();
+                                    userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerSummary(lexicologer)).ToList();
                                 }
                                 catch (Exception exception)
                                 {
@@ -377,7 +377,7 @@ namespace AsinoPuzzles.Functions
                                 var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
                                 var lexicologers = lexicologersResponse.Resource.Where(lexicologer => !lexicologer.IsDeleted);
 
-                                userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerResult(lexicologer, user)).ToList();
+                                userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerSummary(lexicologer)).ToList();
                             }
                             catch (Exception exception)
                             {
@@ -435,7 +435,7 @@ namespace AsinoPuzzles.Functions
                     
                         if (biographyJson.Length > 4000)
                         {
-                            return new BadRequestObjectResult("BIOGRAPHY_TOO_LONG");
+                            return new BadRequestObjectResult("Too long");
                         }
 
                         user.Name = name[..Math.Min(name.Length, 64)];
@@ -453,7 +453,7 @@ namespace AsinoPuzzles.Functions
                                 var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
                                 var lexicologers = lexicologersResponse.Resource.Where(lexicologer => !lexicologer.IsDeleted);
 
-                                userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerResult(lexicologer, user)).ToList();
+                                userResult.Lexicologers = lexicologers.Select(lexicologer => new LexicologerSummary(lexicologer)).ToList();
                             }
                             catch (Exception exception)
                             {

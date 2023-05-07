@@ -21,7 +21,7 @@ namespace AsinoPuzzles.Functions.Models
         public string Id { get; set; }
         public string Name { get; set; }
         public Document Biography { get; set; }
-        public List<LexicologerResult> Lexicologers { get; set; }
+        public List<LexicologerSummary> Lexicologers { get; set; }
         public DateTime DateCreated { get; set; }
         public DateTime DateUpdated { get; set; }
 
@@ -49,6 +49,14 @@ namespace AsinoPuzzles.Functions.Models
         public string Title { get; set; }
         public DateTime DateCreated { get; set; }
         public DateTime DateUpdated { get; set; }
+
+        public LexicologerSummary(Lexicologer lexicologer)
+        {
+            Id = lexicologer.Id;
+            Title = lexicologer.Title;
+            DateCreated = lexicologer.DateCreated;
+            DateUpdated = lexicologer.DateUpdated;
+        }
     }
 
     public sealed class Lexicologer
