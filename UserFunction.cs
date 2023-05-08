@@ -18,10 +18,100 @@ using User = AsinoPuzzles.Functions.Models.User;
 
 namespace AsinoPuzzles.Functions
 {
+    public static class BraiderNewFunction {
+        [FunctionName("BraiderNew")]
+        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "braiders")] HttpRequest req, ILogger log)
+        {
+            try{
+                var cosmosClient = CosmoClient.New();
+                var database = cosmosClient.GetDatabase("AsinoPuzzles");
+                var usersContainer = database.GetContainer("Users");
+                var userIdsContainer = database.GetContainer("UserIds");
+                var braidersContainer = database.GetContainer("Braiders");
+
+                var claimsPrincipal = StaticWebAppsAuth.Parse(req);
+                var claimId = claimsPrincipal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+
+                // gotta be logged in!
+                if (claimId == null)
+                    return new UnauthorizedResult();
+
+                try {
+                    var userIdResponse = await userIdsContainer.ReadItemAsync<UserIdObject>(claimId.ToLower(), new PartitionKey(claimId.ToLower()));
+                    var userId = userIdResponse.Resource.UserId;
+
+                    var attempt = 1;
+                    var braiderGameId = IdUtils.CreateRandomId(attempt);
+                    var okay = false;
+
+                    while (!okay && attempt < 20)
+                    {
+                        try
+                        {
+                            var braiderResponse = await usersContainer.ReadItemAsync<Braider>(braiderGameId, new PartitionKey(braiderGameId));
+
+                            attempt++;
+                            braiderGameId = IdUtils.CreateRandomId(attempt);
+                        }
+                        catch (CosmosException __) when (__.StatusCode == HttpStatusCode.NotFound)
+                        {
+                            okay = true;
+                        }
+                    }
+
+                    if (okay)
+                    {
+                        var userResponse = await usersContainer.ReadItemAsync<User>(userId, new PartitionKey(userId));
+                        var user = userResponse.Resource;
+
+                        var braiderIds = user.BraiderIds ?? new List<string>();
+                        braiderIds.Add(braiderGameId);
+                        user.BraiderIds = braiderIds;
+
+                        await usersContainer.ReplaceItemAsync(user, user.Id, new PartitionKey(user.PartitionKey));
+
+                        var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                        var newGame = JsonConvert.DeserializeObject<Braider>(requestBody);
+
+                        var title = newGame.Title?.Trim() ?? "Braider Game";
+
+                        var braider = new Braider
+                        {
+                            Id = braiderGameId,
+                            PartitionKey = braiderGameId,
+                            UserId = userId,
+                            Title = title[..Math.Min(title.Length, 64)],
+                            DateCreated = DateTime.UtcNow,
+                            DateUpdated = DateTime.UtcNow
+                        };
+
+                        await braidersContainer.CreateItemAsync(braider, new PartitionKey(braider.PartitionKey));
+
+                        return new OkObjectResult(new BraiderResult(braider, user));
+                    }
+                    else
+                    {
+                        log.LogError("Unable to create a distinct Braider Id");
+                        return new StatusCodeResult(500);
+                    }
+                }
+                catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+                {
+                    log.LogError(exception, "Bad {ClaimId}", claimId);
+                    return new StatusCodeResult(500);
+                }
+            }
+            catch (Exception exception)
+            {
+                log.LogError(exception, "Braider Function {Method} Exception", req.Method);
+                return new StatusCodeResult(500);
+            }
+        }
+    }
+
     public static class LexicologersNewFunction {
         [FunctionName("LexicologerNew")]
-        public static async Task<IActionResult> Run(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "lexicologers")] HttpRequest req, ILogger log)
+        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "lexicologers")] HttpRequest req, ILogger log)
         {
             try
             {
@@ -140,9 +230,7 @@ namespace AsinoPuzzles.Functions
 
     public static class LexicologersExistingFunction {
         [FunctionName("LexicologerExisting")]
-        public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "GET", "PUT", "DELETE", Route = "lexicologers/{id}")] HttpRequest req,
-            string id, ILogger log)
+        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "GET", "PUT", "DELETE", Route = "lexicologers/{id}")] HttpRequest req, string id, ILogger log)
         {
             try
             {
@@ -224,9 +312,7 @@ namespace AsinoPuzzles.Functions
     public static class UserFunction
     {
         [FunctionName("User")]
-        public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "GET", "PUT", Route = "users/{id}")] HttpRequest req,
-            string id, ILogger log)
+        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "GET", "PUT", Route = "users/{id}")] HttpRequest req, string id, ILogger log)
         {
             try
             {

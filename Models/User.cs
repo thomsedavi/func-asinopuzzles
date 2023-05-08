@@ -13,6 +13,7 @@ namespace AsinoPuzzles.Functions.Models
         public string Name { get; set; }
         public Document Biography { get; set; }
         public List<string> LexicologerIds { get; set; }
+        public List<string> BraiderIds { get; set; }
         public DateTime DateCreated { get; set; }
         public DateTime DateUpdated { get; set; }
     }
@@ -103,5 +104,36 @@ namespace AsinoPuzzles.Functions.Models
     public sealed class RequiredWord {
         public string PrimaryWord { get; set; }
         public List<string> SecondaryWords { get; set; }
+    }
+
+    public sealed class Braider {
+        [JsonProperty(PropertyName = "id")]
+        public string Id { get; set; }
+        [JsonProperty(PropertyName = "partitionKey")]
+        public string PartitionKey { get; set; }
+        public string UserId { get; set; }
+        public string Title { get; set; }
+        public DateTime DateCreated { get; set; }
+        public DateTime DateUpdated { get; set; }
+        public bool IsDeleted { get; set; }
+    }
+
+        public sealed class BraiderResult {
+        public string Id { get; set; }
+        public string UserId { get; set; }
+        public string UserName { get; set; }
+        public string Title { get; set; }
+        public DateTime DateCreated { get; set; }
+        public DateTime DateUpdated { get; set; }
+
+        public BraiderResult(Braider braider, User user)
+        {
+            Id = braider.Id;
+            UserId = user.Id;
+            UserName = user.Name;
+            Title = braider.Title;
+            DateCreated = braider.DateCreated;
+            DateUpdated = braider.DateUpdated;
+        }
     }
 }
