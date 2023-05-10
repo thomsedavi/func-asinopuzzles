@@ -18,8 +18,8 @@ using User = AsinoPuzzles.Functions.Models.User;
 
 namespace AsinoPuzzles.Functions
 {
-    public static class BraiderNewFunction {
-        [FunctionName("BraiderNew")]
+    public static class BraiderCreateFunction {
+        [FunctionName("BraiderCreate")]
         public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "braiders")] HttpRequest req, ILogger log)
         {
             try{
@@ -75,6 +75,8 @@ namespace AsinoPuzzles.Functions
 
                         var title = newGame.Title?.Trim() ?? "Braider Game";
 
+                        // other things go here
+
                         var braider = new Braider
                         {
                             Id = braiderGameId,
@@ -109,8 +111,78 @@ namespace AsinoPuzzles.Functions
         }
     }
 
-    public static class LexicologersNewFunction {
-        [FunctionName("LexicologerNew")]
+    public static class BraiderUpdateFunction {
+        [FunctionName("BraiderUpdate")]
+        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "GET", "PUT", "DELETE", Route = "braiders/{id}")] HttpRequest req, string id, ILogger log)
+        {
+            try
+            {
+                var cosmosClient = CosmoClient.New();
+                var database = cosmosClient.GetDatabase("AsinoPuzzles");
+                var usersContainer = database.GetContainer("Users");
+                var userIdsContainer = database.GetContainer("UserIds");
+                var braidersContainer = database.GetContainer("Braiders");
+
+                var claimsPrincipal = StaticWebAppsAuth.Parse(req);
+                var claimId = claimsPrincipal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+
+                var braiderResponse = await braidersContainer.ReadItemAsync<Braider>(id.ToLower(), new PartitionKey(id.ToLower()));
+                var braider = braiderResponse.Resource;
+
+                var userResponse = await usersContainer.ReadItemAsync<User>(braider.UserId.ToLower(), new PartitionKey(braider.UserId.ToLower()));
+                var user = userResponse.Resource;
+
+                if (req.Method == "GET") {
+                    if (braider.IsDeleted)
+                        return new StatusCodeResult(500);
+
+                    return new OkObjectResult(new BraiderResult(braider, user));
+                } else if (req.Method == "PUT") {
+                    var userIdResponse = await userIdsContainer.ReadItemAsync<UserIdObject>(claimId.ToLower(), new PartitionKey(claimId.ToLower()));
+                    var userId = userIdResponse.Resource.UserId;
+
+                    if (braider.UserId != userId)
+                        return new UnauthorizedResult();
+
+                    var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                    var update = JsonConvert.DeserializeObject<Braider>(requestBody);
+
+                    var title = update.Title?.Trim() ?? braider.Title;
+
+                    // other things go here
+
+                    braider.Title = title[..Math.Min(title.Length, 64)];
+                    braider.DateUpdated = DateTime.UtcNow;
+
+                    await braidersContainer.ReplaceItemAsync(braider, braider.Id, new PartitionKey(braider.PartitionKey));
+                    
+                    return new OkObjectResult(new BraiderResult(braider, user));
+                } else if (req.Method == "DELETE") {
+                    var userIdResponse = await userIdsContainer.ReadItemAsync<UserIdObject>(claimId.ToLower(), new PartitionKey(claimId.ToLower()));
+                    var userId = userIdResponse.Resource.UserId;
+
+                    if (braider.UserId != userId)
+                        return new UnauthorizedResult();
+
+                    braider.IsDeleted = true;
+
+                    await braidersContainer.ReplaceItemAsync(braider, braider.Id, new PartitionKey(braider.PartitionKey));
+                    
+                    return new OkResult();
+                } else {
+                    return new StatusCodeResult(500);
+                }
+            }
+            catch (Exception exception)
+            {
+                log.LogError(exception, "Braider Function {Method} {Id} Exception", req.Method, id);
+                return new StatusCodeResult(500);
+            }
+        }
+    }
+
+    public static class LexicologersCreateFunction {
+        [FunctionName("LexicologerCreate")]
         public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "lexicologers")] HttpRequest req, ILogger log)
         {
             try
@@ -228,8 +300,8 @@ namespace AsinoPuzzles.Functions
         }
     }
 
-    public static class LexicologersExistingFunction {
-        [FunctionName("LexicologerExisting")]
+    public static class LexicologersUpdateFunction {
+        [FunctionName("LexicologerUpdate")]
         public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "GET", "PUT", "DELETE", Route = "lexicologers/{id}")] HttpRequest req, string id, ILogger log)
         {
             try
@@ -321,6 +393,7 @@ namespace AsinoPuzzles.Functions
                 var usersContainer = database.GetContainer("Users");
                 var userIdsContainer = database.GetContainer("UserIds");
                 var lexicologersContainer = database.GetContainer("Lexicologers");
+                var braidersContainer = database.GetContainer("Braiders");
 
                 var claimsPrincipal = StaticWebAppsAuth.Parse(req);
                 var claimId = claimsPrincipal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
@@ -468,6 +541,21 @@ namespace AsinoPuzzles.Functions
                             catch (Exception exception)
                             {
                                 log.LogError(exception, "Lexicologers error for {UserId}", user.Id);
+                            }
+                        }
+
+                        if (user.BraiderIds != null && user.BraiderIds.Any()) {
+                            try {
+                                var braiderList = user.BraiderIds.Select(braiderId => (braiderId, new PartitionKey(braiderId))).ToList();
+
+                                var braidersResponse = await braidersContainer.ReadManyItemsAsync<Braider>(braiderList);
+                                var braiders = braidersResponse.Resource.Where(braider => !braider.IsDeleted);
+
+                                userResult.Braiders = braiders.Select(braider => new BraiderSummary(braider)).ToList();
+                            }
+                            catch (Exception exception)
+                            {
+                                log.LogError(exception, "Braiders error for {UserId}", user.Id);
                             }
                         }
 

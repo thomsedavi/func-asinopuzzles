@@ -23,6 +23,7 @@ namespace AsinoPuzzles.Functions.Models
         public string Name { get; set; }
         public Document Biography { get; set; }
         public List<LexicologerSummary> Lexicologers { get; set; }
+        public List<BraiderSummary> Braiders { get; set; }
         public DateTime DateCreated { get; set; }
         public DateTime DateUpdated { get; set; }
 
@@ -104,6 +105,21 @@ namespace AsinoPuzzles.Functions.Models
     public sealed class RequiredWord {
         public string PrimaryWord { get; set; }
         public List<string> SecondaryWords { get; set; }
+    }
+
+    public sealed class BraiderSummary {
+        public string Id { get; set; }
+        public string Title { get; set; }
+        public DateTime DateCreated { get; set; }
+        public DateTime DateUpdated { get; set; }
+
+        public BraiderSummary(Braider braider)
+        {
+            Id = braider.Id;
+            Title = braider.Title;
+            DateCreated = braider.DateCreated;
+            DateUpdated = braider.DateUpdated;
+        }
     }
 
     public sealed class Braider {
