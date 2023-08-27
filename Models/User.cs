@@ -14,6 +14,7 @@ namespace AsinoPuzzles.Functions.Models
         public Document Biography { get; set; }
         public List<string> LexicologerIds { get; set; }
         public List<string> BraiderIds { get; set; }
+        public List<string> AsinoIds { get; set; }
         public DateTime DateCreated { get; set; }
         public DateTime DateUpdated { get; set; }
     }
@@ -24,6 +25,7 @@ namespace AsinoPuzzles.Functions.Models
         public Document Biography { get; set; }
         public List<LexicologerSummary> Lexicologers { get; set; }
         public List<BraiderSummary> Braiders { get; set; }
+        public List<AsinoSummary> Asinoes { get; set; }
         public DateTime DateCreated { get; set; }
         public DateTime DateUpdated { get; set; }
 

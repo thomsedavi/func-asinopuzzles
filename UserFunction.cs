@@ -18,11 +18,106 @@ using User = AsinoPuzzles.Functions.Models.User;
 
 namespace AsinoPuzzles.Functions
 {
+    public static class AsinoCreateFunction {
+        [FunctionName("AsinoCreate")]
+        public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "asinoes")] HttpRequest req, ILogger log) {
+            try
+            {
+                var cosmosClient = CosmoClient.New();
+                var database = cosmosClient.GetDatabase("AsinoPuzzles");
+                var usersContainer = database.GetContainer("Users");
+                var userIdsContainer = database.GetContainer("UserIds");
+                var asinoesContainer = database.GetContainer("Asinoes");
+
+                var claimsPrincipal = StaticWebAppsAuth.Parse(req);
+                var claimId = claimsPrincipal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+
+                // gotta be logged in!
+                if (claimId == null)
+                    return new UnauthorizedResult();
+
+                try
+                {
+                    var userIdResponse = await userIdsContainer.ReadItemAsync<UserIdObject>(claimId.ToLower(), new PartitionKey(claimId.ToLower()));
+                    var userId = userIdResponse.Resource.UserId;
+
+                    var attempt = 1;
+                    var asinoPuzzleId = IdUtils.CreateRandomId(attempt);
+                    var okay = false;
+
+                    while (!okay && attempt < 20)
+                    {
+                        try
+                        {
+                            var asinoResponse = await usersContainer.ReadItemAsync<Asino>(asinoPuzzleId, new PartitionKey(asinoPuzzleId));
+
+                            attempt++;
+                            asinoPuzzleId = IdUtils.CreateRandomId(attempt);
+                        }
+                        catch (CosmosException __) when (__.StatusCode == HttpStatusCode.NotFound)
+                        {
+                            okay = true;
+                        }
+                    }
+
+                    if (okay)
+                    {
+                        var userResponse = await usersContainer.ReadItemAsync<User>(userId, new PartitionKey(userId));
+                        var user = userResponse.Resource;
+
+                        var asinoIds = user.AsinoIds ?? new List<string>();
+                        asinoIds.Add(asinoPuzzleId);
+                        user.AsinoIds = asinoIds;
+
+                        await usersContainer.ReplaceItemAsync(user, user.Id, new PartitionKey(user.PartitionKey));
+
+                        var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                        var newPuzzle = JsonConvert.DeserializeObject<Braider>(requestBody);
+
+                        var title = newPuzzle.Title?.Trim() ?? "Asino Puzzle";
+                        // other things go here
+
+                        var asino = new Asino
+                        {
+                            Id = asinoPuzzleId,
+                            PartitionKey = asinoPuzzleId,
+                            UserId = userId,
+                            Title = title[..Math.Min(title.Length, 64)],
+                            DateCreated = DateTime.UtcNow,
+                            DateUpdated = DateTime.UtcNow
+                        };
+
+                        await asinoesContainer.CreateItemAsync(asino, new PartitionKey(asino.PartitionKey));
+
+                        return new OkObjectResult(new AsinoResult(asino, user));
+                    }
+                    else
+                    {
+                        log.LogError("Unable to create a distinct Asino Id");
+                        return new StatusCodeResult(500);
+                    }
+                }
+                catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+                {
+                    log.LogError(exception, "Bad {ClaimId}", claimId);
+                    return new StatusCodeResult(500);
+                }
+            }
+            catch (Exception exception)
+            {
+                log.LogError(exception, "Asino Function {Method} Exception", req.Method);
+                return new StatusCodeResult(500);
+            }
+        }
+    }
+
+
     public static class BraiderCreateFunction {
         [FunctionName("BraiderCreate")]
         public static async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "POST", Route = "braiders")] HttpRequest req, ILogger log)
         {
-            try{
+            try
+            {
                 var cosmosClient = CosmoClient.New();
                 var database = cosmosClient.GetDatabase("AsinoPuzzles");
                 var usersContainer = database.GetContainer("Users");
@@ -36,7 +131,8 @@ namespace AsinoPuzzles.Functions
                 if (claimId == null)
                     return new UnauthorizedResult();
 
-                try {
+                try
+                {
                     var userIdResponse = await userIdsContainer.ReadItemAsync<UserIdObject>(claimId.ToLower(), new PartitionKey(claimId.ToLower()));
                     var userId = userIdResponse.Resource.UserId;
 
@@ -74,7 +170,8 @@ namespace AsinoPuzzles.Functions
                         var newGame = JsonConvert.DeserializeObject<Braider>(requestBody);
 
                         var title = newGame.Title?.Trim() ?? "Braider Game";
-
+                        var variables = BraiderFunctions.ValidateVariables(newGame.Variables);
+                        var elements = BraiderFunctions.ValidateElements(newGame.Elements, variables);
                         // other things go here
 
                         var braider = new Braider
@@ -83,6 +180,8 @@ namespace AsinoPuzzles.Functions
                             PartitionKey = braiderGameId,
                             UserId = userId,
                             Title = title[..Math.Min(title.Length, 64)],
+                            Variables = variables,
+                            Elements = elements,
                             DateCreated = DateTime.UtcNow,
                             DateUpdated = DateTime.UtcNow
                         };
@@ -148,10 +247,13 @@ namespace AsinoPuzzles.Functions
                     var update = JsonConvert.DeserializeObject<Braider>(requestBody);
 
                     var title = update.Title?.Trim() ?? braider.Title;
-
+                    var variables = update.Variables != null ? BraiderFunctions.ValidateVariables(update.Variables) : braider.Variables;
+                    var elements = update.Elements != null ? BraiderFunctions.ValidateElements(update.Elements, update.Variables) : braider.Elements;
                     // other things go here
 
                     braider.Title = title[..Math.Min(title.Length, 64)];
+                    braider.Variables = variables;
+                    braider.Elements = elements;
                     braider.DateUpdated = DateTime.UtcNow;
 
                     await braidersContainer.ReplaceItemAsync(braider, braider.Id, new PartitionKey(braider.PartitionKey));
@@ -394,6 +496,7 @@ namespace AsinoPuzzles.Functions
                 var userIdsContainer = database.GetContainer("UserIds");
                 var lexicologersContainer = database.GetContainer("Lexicologers");
                 var braidersContainer = database.GetContainer("Braiders");
+                var asinoesContainer = database.GetContainer("Asinoes");
 
                 var claimsPrincipal = StaticWebAppsAuth.Parse(req);
                 var claimId = claimsPrincipal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
@@ -414,7 +517,8 @@ namespace AsinoPuzzles.Functions
                             var userResult = new UserResult(user);
 
                             if (user.LexicologerIds != null && user.LexicologerIds.Any()) {
-                                try {
+                                try
+                                {
                                     var lexicologerList = user.LexicologerIds.Select(lexicologerId => (lexicologerId, new PartitionKey(lexicologerId))).ToList();
 
                                     var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
@@ -425,6 +529,38 @@ namespace AsinoPuzzles.Functions
                                 catch (Exception exception)
                                 {
                                     log.LogError(exception, "Lexicologers error for {UserId}", user.Id);
+                                }
+                            }
+
+                            if (user.BraiderIds != null && user.BraiderIds.Any()) {
+                                try
+                                {
+                                    var braiderList = user.BraiderIds.Select(braiderId => (braiderId, new PartitionKey(braiderId))).ToList();
+
+                                    var braidersResponse = await braidersContainer.ReadManyItemsAsync<Braider>(braiderList);
+                                    var braiders = braidersResponse.Resource.Where(braider => !braider.IsDeleted);
+
+                                    userResult.Braiders = braiders.Select(braider => new BraiderSummary(braider)).ToList();
+                                }
+                                catch (Exception exception)
+                                {
+                                    log.LogError(exception, "Braiders error for {UserId}", user.Id);
+                                }
+                            }
+
+                            if (user.AsinoIds != null && user.AsinoIds.Any()) {
+                                try
+                                {
+                                    var asinoList = user.AsinoIds.Select(asinoId => (asinoId, new PartitionKey(asinoId))).ToList();
+
+                                    var asinoesResponse = await asinoesContainer.ReadManyItemsAsync<Asino>(asinoList);
+                                    var asinoes = asinoesResponse.Resource.Where(asino => !asino.IsDeleted);
+
+                                    userResult.Asinoes = asinoes.Select(asino => new AsinoSummary(asino)).ToList();
+                                }
+                                catch (Exception exception)
+                                {
+                                    log.LogError(exception, "Asinoes error for {UserId}", user.Id);
                                 }
                             }
 
@@ -497,7 +633,8 @@ namespace AsinoPuzzles.Functions
                             var userResult = new UserResult(user);
 
                             if (user.LexicologerIds != null && user.LexicologerIds.Any()) {
-                                try {
+                                try
+                                {
                                     var lexicologerList = user.LexicologerIds.Select(lexicologerId => (lexicologerId, new PartitionKey(lexicologerId))).ToList();
 
                                     var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
@@ -508,6 +645,38 @@ namespace AsinoPuzzles.Functions
                                 catch (Exception exception)
                                 {
                                     log.LogError(exception, "Lexicologers error for {UserId}", user.Id);
+                                }
+                            }
+
+                            if (user.BraiderIds != null && user.BraiderIds.Any()) {
+                                try
+                                {
+                                    var braiderList = user.BraiderIds.Select(braiderId => (braiderId, new PartitionKey(braiderId))).ToList();
+
+                                    var braidersResponse = await braidersContainer.ReadManyItemsAsync<Braider>(braiderList);
+                                    var braiders = braidersResponse.Resource.Where(braider => !braider.IsDeleted);
+
+                                    userResult.Braiders = braiders.Select(braider => new BraiderSummary(braider)).ToList();
+                                }
+                                catch (Exception exception)
+                                {
+                                    log.LogError(exception, "Braiders error for {UserId}", user.Id);
+                                }
+                            }
+
+                            if (user.AsinoIds != null && user.AsinoIds.Any()) {
+                                try
+                                {
+                                    var asinoList = user.AsinoIds.Select(asinoId => (asinoId, new PartitionKey(asinoId))).ToList();
+
+                                    var asinoesResponse = await asinoesContainer.ReadManyItemsAsync<Asino>(asinoList);
+                                    var asinoes = asinoesResponse.Resource.Where(asino => !asino.IsDeleted);
+
+                                    userResult.Asinoes = asinoes.Select(asino => new AsinoSummary(asino)).ToList();
+                                }
+                                catch (Exception exception)
+                                {
+                                    log.LogError(exception, "Asinoes error for {UserId}", user.Id);
                                 }
                             }
 
@@ -530,7 +699,8 @@ namespace AsinoPuzzles.Functions
                         var user = userResponse.Resource;
 
                         if (user.LexicologerIds != null && user.LexicologerIds.Any()) {
-                            try {
+                            try
+                            {
                                 var lexicologerList = user.LexicologerIds.Select(lexicologerId => (lexicologerId, new PartitionKey(lexicologerId))).ToList();
 
                                 var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
@@ -545,7 +715,8 @@ namespace AsinoPuzzles.Functions
                         }
 
                         if (user.BraiderIds != null && user.BraiderIds.Any()) {
-                            try {
+                            try
+                            {
                                 var braiderList = user.BraiderIds.Select(braiderId => (braiderId, new PartitionKey(braiderId))).ToList();
 
                                 var braidersResponse = await braidersContainer.ReadManyItemsAsync<Braider>(braiderList);
@@ -556,6 +727,22 @@ namespace AsinoPuzzles.Functions
                             catch (Exception exception)
                             {
                                 log.LogError(exception, "Braiders error for {UserId}", user.Id);
+                            }
+                        }
+
+                        if (user.AsinoIds != null && user.AsinoIds.Any()) {
+                            try
+                            {
+                                var asinoList = user.AsinoIds.Select(asinoId => (asinoId, new PartitionKey(asinoId))).ToList();
+
+                                var asinoesResponse = await asinoesContainer.ReadManyItemsAsync<Asino>(asinoList);
+                                var asinoes = asinoesResponse.Resource.Where(asino => !asino.IsDeleted);
+
+                                userResult.Asinoes = asinoes.Select(asino => new AsinoSummary(asino)).ToList();
+                            }
+                            catch (Exception exception)
+                            {
+                                log.LogError(exception, "Asinoes error for {UserId}", user.Id);
                             }
                         }
 
@@ -621,7 +808,8 @@ namespace AsinoPuzzles.Functions
                         var userResult = new UserResult(user);
 
                         if (user.LexicologerIds != null && user.LexicologerIds.Any()) {
-                            try {
+                            try
+                            {
                                 var lexicologerList = user.LexicologerIds.Select(lexicologerId => (lexicologerId, new PartitionKey(lexicologerId))).ToList();
 
                                 var lexicologersResponse = await lexicologersContainer.ReadManyItemsAsync<Lexicologer>(lexicologerList);
@@ -632,6 +820,38 @@ namespace AsinoPuzzles.Functions
                             catch (Exception exception)
                             {
                                 log.LogError(exception, "Lexicologers error for {UserId}", user.Id);
+                            }
+                        }
+
+                        if (user.BraiderIds != null && user.BraiderIds.Any()) {
+                            try
+                            {
+                                var braiderList = user.BraiderIds.Select(braiderId => (braiderId, new PartitionKey(braiderId))).ToList();
+
+                                var braidersResponse = await braidersContainer.ReadManyItemsAsync<Braider>(braiderList);
+                                var braiders = braidersResponse.Resource.Where(braider => !braider.IsDeleted);
+
+                                userResult.Braiders = braiders.Select(braider => new BraiderSummary(braider)).ToList();
+                            }
+                            catch (Exception exception)
+                            {
+                                log.LogError(exception, "Braiders error for {UserId}", user.Id);
+                            }
+                        }
+
+                        if (user.AsinoIds != null && user.AsinoIds.Any()) {
+                            try
+                            {
+                                var asinoList = user.AsinoIds.Select(asinoId => (asinoId, new PartitionKey(asinoId))).ToList();
+
+                                var asinoesResponse = await asinoesContainer.ReadManyItemsAsync<Asino>(asinoList);
+                                var asinoes = asinoesResponse.Resource.Where(asino => !asino.IsDeleted);
+
+                                userResult.Asinoes = asinoes.Select(asino => new AsinoSummary(asino)).ToList();
+                            }
+                            catch (Exception exception)
+                            {
+                                log.LogError(exception, "Asinoes error for {UserId}", user.Id);
                             }
                         }
 
